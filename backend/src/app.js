@@ -15,7 +15,7 @@ app.use(
   cors({
     origin: [
       "http://localhost:5173",       // local frontend
-      "https://your-frontend.vercel.app", // later
+      "https://gigflow-eosin-nine.vercel.app/", // later
     ],
     credentials: true, // 🔴 REQUIRED FOR COOKIES
   })
