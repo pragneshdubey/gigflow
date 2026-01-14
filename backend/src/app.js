@@ -21,6 +21,9 @@ app.use(
   })
 );
 
+app.get("/", (req, res) => {
+  res.json({ message: "GigFlow API is running 🚀" });
+});
 // routes
 app.use("/api/auth", authRoutes);
 app.use("/api/gigs", gigRoutes);
