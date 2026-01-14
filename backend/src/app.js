@@ -1,6 +1,6 @@
 import express from "express";
-import cookieParser from "cookie-parser";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 
 import authRoutes from "./routes/auth.routes.js";
 import gigRoutes from "./routes/gig.routes.js";
@@ -13,17 +13,17 @@ app.use(cookieParser());
 
 app.use(
   cors({
-    origin: "http://localhost:5173",
+    origin: [
+      "http://localhost:5173",       // local frontend
+      "https://your-frontend.vercel.app", // later
+    ],
     credentials: true, // 🔴 REQUIRED FOR COOKIES
   })
 );
 
+// routes
 app.use("/api/auth", authRoutes);
 app.use("/api/gigs", gigRoutes);
 app.use("/api/bids", bidRoutes);
-
-app.get("/", (req, res) => {
-  res.json({ message: "GigFlow API is running 🚀" });
-});
 
 export default app;
