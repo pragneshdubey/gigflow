@@ -1,144 +1,139 @@
-import mongoose from "mongoose";
 import Bid from "../models/Bid.model.js";
 import Gig from "../models/Gig.model.js";
 
-/* =======================
-   CREATE BID (Apply)
-======================= */
-export const createBid = async (req, res) => {
+// ================= PLACE BID =================
+export const placeBid = async (req, res) => {
   try {
-    const { gigId, message, price } = req.body;
+    const { gigId } = req.params;
+    const { amount, message } = req.body;
 
-    if (!gigId || !message || !price) {
-      return res.status(400).json({ message: "All fields are required" });
+    if (!amount) {
+      return res.status(400).json({ message: "Bid amount required" });
     }
 
+    // 1️⃣ Check gig exists
     const gig = await Gig.findById(gigId);
     if (!gig) {
       return res.status(404).json({ message: "Gig not found" });
     }
 
+    // 2️⃣ Only OPEN gigs accept bids
+    if (gig.status !== "OPEN") {
+      return res.status(400).json({
+        message: "This gig is no longer accepting bids",
+      });
+    }
+
+    // 3️⃣ Owner cannot bid on own gig
     if (gig.ownerId.toString() === req.user._id.toString()) {
-      return res.status(403).json({ message: "You cannot bid on your own gig" });
+      return res.status(403).json({
+        message: "You cannot bid on your own gig",
+      });
     }
 
-    if (gig.status !== "open") {
-      return res.status(400).json({ message: "Gig is not open for bidding" });
-    }
-
+    // 4️⃣ Prevent duplicate bids
     const existingBid = await Bid.findOne({
       gigId,
-      freelancerId: req.user._id
+      freelancerId: req.user._id,
     });
 
     if (existingBid) {
-      return res.status(400).json({ message: "You already applied to this gig" });
+      return res.status(400).json({
+        message: "You have already placed a bid on this gig",
+      });
     }
 
+    // 5️⃣ Create bid
     const bid = await Bid.create({
       gigId,
-      freelancerId: req.user._id,
-      message,
-      price
+      freelancerId: req.user._id,     // ✅ matches schema
+      price: amount,                  // ✅ matches schema
+      message: message || "Interested in this gig",
+      status: "pending",
     });
 
     res.status(201).json({
-      message: "Bid submitted successfully",
-      bid
+      message: "Bid placed successfully",
+      bid,
     });
   } catch (error) {
-    console.error("CREATE BID ERROR:", error);
+    console.error("PLACE BID ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
 
-/* =======================
-   GET BIDS (Owner Only)
-======================= */
-export const getBidsForGig = async (req, res) => {
+// ================= GET MY BIDS =================
+export const getMyBids = async (req, res) => {
   try {
-    const { gigId } = req.params;
-
-    const gig = await Gig.findById(gigId);
-    if (!gig) {
-      return res.status(404).json({ message: "Gig not found" });
-    }
-
-    if (gig.ownerId.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: "Not authorized" });
-    }
-
-    const bids = await Bid.find({ gigId }).populate(
-      "freelancerId",
-      "name email"
-    );
+    const bids = await Bid.find({ freelancerId: req.user._id })
+      .populate("gigId", "title status budget")
+      .sort({ createdAt: -1 });
 
     res.json(bids);
   } catch (error) {
-    console.error("GET BIDS ERROR:", error);
+    console.error("GET MY BIDS ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
 
-/* =======================
-   HIRE BID (FINAL STEP)
-======================= */
-export const hireBid = async (req, res) => {
-  const session = await mongoose.startSession();
-
+// ================= GET BIDS FOR A GIG =================
+export const getBidsForGig = async (req, res) => {
   try {
-    session.startTransaction();
+    const bids = await Bid.find({ gigId: req.params.gigId })
+      .populate("freelancerId", "name email")
+      .sort({ createdAt: -1 });
 
+    res.json(bids);
+  } catch (error) {
+    console.error("GET GIG BIDS ERROR:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+
+export const updateBidStatus = async (req, res) => {
+  try {
     const { bidId } = req.params;
+    const { status } = req.body; // ACCEPTED or REJECTED
 
-    const bid = await Bid.findById(bidId).session(session);
+    if (!["ACCEPTED", "REJECTED"].includes(status)) {
+      return res.status(400).json({ message: "Invalid status" });
+    }
+
+    const bid = await Bid.findById(bidId).populate("gigId");
+
     if (!bid) {
-      await session.abortTransaction();
       return res.status(404).json({ message: "Bid not found" });
     }
 
-    const gig = await Gig.findById(bid.gigId).session(session);
-    if (!gig) {
-      await session.abortTransaction();
-      return res.status(404).json({ message: "Gig not found" });
+    // 🔐 Only gig owner can act
+    if (bid.gigId.ownerId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: "Not authorized" });
     }
 
-    if (gig.ownerId.toString() !== req.user._id.toString()) {
-      await session.abortTransaction();
-      return res.status(403).json({ message: "Not authorized to hire" });
+    // ✅ Accept logic
+    if (status === "ACCEPTED") {
+      // Reject all bids first
+      await Bid.updateMany(
+        { gigId: bid.gigId._id },
+        { status: "REJECTED" }
+      );
+
+      // Accept selected bid
+      bid.status = "ACCEPTED";
+      await bid.save();
+
+      // Close gig
+      bid.gigId.status = "closed";
+      await bid.gigId.save();
+    } else {
+      bid.status = "REJECTED";
+      await bid.save();
     }
 
-    if (gig.status !== "open") {
-      await session.abortTransaction();
-      return res.status(400).json({ message: "Gig already assigned" });
-    }
-
-    // Hire selected bid
-    bid.status = "hired";
-    await bid.save({ session });
-
-    // Reject all other bids
-    await Bid.updateMany(
-      { gigId: gig._id, _id: { $ne: bid._id } },
-      { status: "rejected" },
-      { session }
-    );
-
-    // Mark gig as assigned
-    gig.status = "assigned";
-    await gig.save({ session });
-
-    await session.commitTransaction();
-
-    res.json({
-      message: "Freelancer hired successfully",
-      hiredBid: bid
-    });
+    res.json({ message: "Bid updated", bid });
   } catch (error) {
-    await session.abortTransaction();
-    console.error("HIRE BID ERROR:", error);
+    console.error("UPDATE BID STATUS ERROR:", error);
     res.status(500).json({ message: "Server error" });
-  } finally {
-    session.endSession();
   }
 };

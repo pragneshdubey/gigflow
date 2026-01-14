@@ -5,39 +5,32 @@ const gigSchema = new mongoose.Schema(
     title: {
       type: String,
       required: true,
-      trim: true
+      trim: true,
     },
 
     description: {
       type: String,
-      required: true
+      required: true,
     },
 
     budget: {
       type: Number,
       required: true,
-      min: 0
     },
 
     ownerId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true
+      required: true,
     },
 
     status: {
       type: String,
-      enum: ["open", "assigned"],
-      default: "open"
-    }
+      enum: ["OPEN", "CLOSED"],
+      default: "OPEN",
+    },
   },
-  {
-    timestamps: true
-  }
+  { timestamps: true }
 );
 
-// 🔍 Search optimization
-gigSchema.index({ title: "text" });
-
-const Gig = mongoose.model("Gig", gigSchema);
-export default Gig;
+export default mongoose.model("Gig", gigSchema);

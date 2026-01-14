@@ -1,6 +1,6 @@
 import Gig from "../models/Gig.model.js";
 
-// CREATE A GIG
+// ================= CREATE GIG =================
 export const createGig = async (req, res) => {
   try {
     const { title, description, budget } = req.body;
@@ -13,32 +13,107 @@ export const createGig = async (req, res) => {
       title,
       description,
       budget,
-      ownerId: req.user._id
+      ownerId: req.user._id,
+      status: "OPEN", // ✅ CONSISTENT ENUM
     });
 
-    res.status(201).json({
-      message: "Gig created successfully",
-      gig
-    });
+    res.status(201).json(gig);
   } catch (error) {
     console.error("CREATE GIG ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
 
-// GET ALL OPEN GIGS (+ SEARCH)
+// ================= GET ALL GIGS =================
 export const getAllGigs = async (req, res) => {
   try {
     const search = req.query.search || "";
 
     const gigs = await Gig.find({
-      status: "open",
-      title: { $regex: search, $options: "i" }
+      status: "OPEN", // ✅ FIXED
+      title: { $regex: search, $options: "i" },
     }).sort({ createdAt: -1 });
 
     res.json(gigs);
   } catch (error) {
-    console.error("GET GIGS ERROR:", error);
+    console.error("GET ALL GIGS ERROR:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ================= GET MY GIGS =================
+export const getMyGigs = async (req, res) => {
+  try {
+    const gigs = await Gig.find({ ownerId: req.user._id })
+      .sort({ createdAt: -1 });
+
+    res.json(gigs);
+  } catch (error) {
+    console.error("GET MY GIGS ERROR:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ================= GET SINGLE GIG =================
+export const getGigById = async (req, res) => {
+  try {
+    const gig = await Gig.findById(req.params.id);
+
+    if (!gig) {
+      return res.status(404).json({ message: "Gig not found" });
+    }
+
+    // 🔥 ADD THIS (VERY IMPORTANT)
+    const gigObj = gig.toObject();
+    gigObj.isOwner =
+      gig.ownerId.toString() === req.user._id.toString();
+
+    res.json(gigObj);
+  } catch (error) {
+    console.error("GET GIG ERROR:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ================= UPDATE GIG =================
+export const updateGig = async (req, res) => {
+  try {
+    const gig = await Gig.findOneAndUpdate(
+      { _id: req.params.id, ownerId: req.user._id },
+      req.body,
+      { new: true }
+    );
+
+    if (!gig) {
+      return res
+        .status(404)
+        .json({ message: "Gig not found or unauthorized" });
+    }
+
+    res.json(gig);
+  } catch (error) {
+    console.error("UPDATE GIG ERROR:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ================= DELETE GIG =================
+export const deleteGig = async (req, res) => {
+  try {
+    const gig = await Gig.findOneAndDelete({
+      _id: req.params.id,
+      ownerId: req.user._id,
+    });
+
+    if (!gig) {
+      return res
+        .status(404)
+        .json({ message: "Gig not found or unauthorized" });
+    }
+
+    res.json({ message: "Gig deleted successfully" });
+  } catch (error) {
+    console.error("DELETE GIG ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
